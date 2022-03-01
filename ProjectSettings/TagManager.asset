@@ -1,0 +1,54 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!78 &1
+TagManager:
+  serializedVersion: 2
+  tags:
+  - Terrain
+  - MainMenuUI
+  - HealingOBJ
+  - GetAmmoOBJ
+  - AK_OBJ
+  - M4_OBJ
+  - SG_OBJ
+  - HG_OBJ
+  - RL_OBJ
+  - GR_OBJ
+  - Static_OBJ
+  layers:
+  - Default
+  - TransparentFX
+  - Ignore Raycast
+  - Player
+  - Water
+  - UI
+  - Enemy
+  - Background
+  - Grenade
+  - StaticOBJ
+  - StaticInteractOBJ
+  - DynamicInteractOBJ
+  - TakeWeapOBJ
+  - ShopOBJ
+  - EnemySpawner
+  - CanTakeOBJ
+  - EffectCollider
+  - None
+  - PostProcess
+  - Background_NonEffectToNavMesh
+  - RideOBJ
+  - Explosive
+  - BreakableWall
+  - ROCK
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  m_SortingLayers:
+  - name: Default
+    uniqueID: 0
+    locked: 0

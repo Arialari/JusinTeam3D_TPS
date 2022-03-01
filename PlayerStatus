@@ -1,0 +1,619 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class PlayerStatus : MonoBehaviour, ICharacterInteract
+{
+    public enum Item { Primary, Secondary, Throwing, Healing, ItemEnd }
+
+    //UI
+    private TPSCharacterController m_TPSCharacterController;
+
+    //Weapon
+    public uint[] m_iTotalAmmo { get; set; } = new uint[(int)Weapon.Type.End] { 90, 30, 20, 120, 99 };
+    //Weapon Var
+    private Item m_eSelectedItem = Item.Primary;
+    private Weapon m_PrimaryWeapon;
+    private Weapon m_SecondaryWeapon;
+    private ThrowWeapon m_ThrowWeapon;
+    private GameObject[] m_Item = new GameObject[(int)Item.ItemEnd];
+    private GameObject m_PrefabThrowWeapon;
+    private Transform m_RightArmTransform;
+
+    public int m_iAmmo_Throwable;
+    public int m_iAmmo_Medicine;
+
+    public int _MaxHP = 0;
+    public int _HP = 0;
+    public int _TemporaryHP_Under = 0;
+    public int _TemporaryHP_Upper = 0;
+    public int _TotalHP = 0;
+
+    public int m_iPocketMoney = 0;
+
+    public bool _bUsePainPhill = false;
+    public bool _TemporaryHP_UnderON = false;
+    public bool _TemporaryHP_UpperON = false;
+
+    public int m_iPrimaryWeaponNUM;
+    public int m_iSecondaryWeaponNUM;
+    public bool m_bChangePrimaryWeap = false; // 장착된 주무기 바뀔 때 쓰는 변수.
+    public bool m_bChangeSecondaryWeap = false; // 장착된 보조무기 바뀔 때 쓰는 변수.
+    public bool m_bChangeThrowable = false; // 장착된 투척물 바뀔 때 쓰는 변수.
+    public bool m_bChangeMedicine = false; // 장착된 의료품 바뀔 때 쓴느 변수.
+
+    public int _MonsterATT = 0;
+
+    float _AccTime;
+    int _iUsePainPhillCount = 0;
+
+    public GameObject _CamRayTarget;
+    public bool _bRayCollToUseItem;
+    Camera_Ray _cameraRay;
+    private float _fRangeToPlayer;
+    private float _fDis_PlayerAndOBJ;
+
+    private InGameUIMgr _gameUIManager;
+    public MainMenuUI _mainMenuUI;
+
+    //private Throwable m_Throwable;
+    //private HealingItem m_HealingItem;
+
+    // Start is called before the first frame update
+    void Start()
+    {
+        SpawnItems();
+
+        m_iAmmo_Throwable = 5;
+        m_iAmmo_Medicine = 3;
+
+        _MaxHP = 100;
+        _HP = _MaxHP;
+        _TemporaryHP_Under = _HP;
+        _fRangeToPlayer = 4.0f;
+
+        m_iPocketMoney = 1000;
+
+        _cameraRay = Camera.main.GetComponent<Camera_Ray>();
+
+        _gameUIManager = GameObject.Find("GameUI Manager").GetComponent<InGameUIMgr>();
+        _mainMenuUI = GameObject.Find("Main Menu Panel").GetComponent<MainMenuUI>();
+        GameObject.Find("MainCam").TryGetComponent(out m_TPSCharacterController);
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        _mainMenuUI.Update();
+
+        ChangeTo_BuyItem();
+
+        if (m_iPocketMoney < 0)
+        {
+            m_iPocketMoney = 0;
+        }
+
+        _CamRayTarget = _cameraRay._RayHitObject;
+
+        if (null != _CamRayTarget)
+        {
+            PopUpToggle();
+        }
+
+        Using_OBJ();
+        KeyInput();
+
+        if (Input.GetKeyDown(KeyCode.KeypadMinus))
+        {
+            SetDamage(10);
+        }
+
+        if (Input.GetKeyDown(KeyCode.KeypadPlus))
+        {
+            _HP += 10;
+            _TemporaryHP_Under += 10;
+        }
+
+        if (Input.GetKeyDown(KeyCode.Keypad9))
+        {
+            _bUsePainPhill = true;
+            _iUsePainPhillCount = 1;
+        }
+
+        if (_HP > _MaxHP)
+        {
+            _HP -= _HP - _MaxHP;
+        }
+
+        if (_HP < 0)
+        {
+            _HP -= _HP;
+        }
+
+        TemporaryHP_Logic();
+
+        if (null != _CamRayTarget)
+            _fDis_PlayerAndOBJ = Vector3.Distance(transform.position, _CamRayTarget.transform.position);
+        else
+        {
+            _CamRayTarget = null;
+            _fDis_PlayerAndOBJ = _fRangeToPlayer + 0.1f;
+        }
+
+        //Debug.Log(_HP.ToString());
+        //Debug.Log(_TemporaryHP_Under.ToString());
+        //Debug.Log(_TemporaryHP_Upper.ToString());
+    }
+    private void KeyInput()
+    {
+        if (m_TPSCharacterController._bOpenUI)
+        {
+            return;
+        }
+        if (Input.GetButtonDown("1") && m_eSelectedItem != Item.Primary)
+        {
+            if (m_eSelectedItem == Item.Throwing)
+            {
+                Destroy(m_Item[(int)Item.Throwing]);
+            }
+            else
+            {
+                m_Item[(int)m_eSelectedItem].SetVisible(false, true);
+            }
+            m_eSelectedItem = Item.Primary;
+            m_Item[(int)m_eSelectedItem].SetVisible(true, true);
+        }
+
+        if (Input.GetButtonDown("2") && m_eSelectedItem != Item.Secondary)
+        {
+            if (m_eSelectedItem == Item.Throwing)
+            {
+                Destroy(m_Item[(int)Item.Throwing]);
+            }
+            else
+            {
+                m_Item[(int)m_eSelectedItem].SetVisible(false, true);
+            }
+            m_eSelectedItem = Item.Secondary;
+            m_Item[(int)m_eSelectedItem].SetVisible(true, true);
+        }
+
+        if (Input.GetButtonDown("3") && m_eSelectedItem != Item.Throwing && m_iAmmo_Throwable > 0)
+        {
+            m_Item[(int)m_eSelectedItem].SetVisible(false, true);
+            SpawnThrowItem();
+            m_eSelectedItem = Item.Throwing;
+        }
+
+        //if (Input.GetButtonDown("4") && m_eSelectedItem != Item.Healing)
+        //{
+        //    m_Item[(int)m_eSelectedItem].GetFollowingMeshRendererComponent().enabled = false;
+        //    m_eSelectedItem = Item.Healing;
+        //    m_Item[(int)m_eSelectedItem].GetFollowingMeshRendererComponent().enabled = true;
+        //}
+
+        if (Input.GetButton("Fire"))
+        {
+            switch (m_eSelectedItem)
+            {
+                case Item.Primary:
+                    m_PrimaryWeapon.Fire();
+                    break;
+                case Item.Secondary:
+                    m_SecondaryWeapon.Fire();
+                    break;
+                case Item.Throwing:
+                    m_ThrowWeapon.SetPinOff(true);
+                    break;
+                case Item.Healing:
+                    break;
+            }
+        }
+        if (Input.GetButtonUp("Fire"))
+        {
+            switch (m_eSelectedItem)
+            {
+                case Item.Primary:
+                    m_PrimaryWeapon.StopFire();
+                    break;
+                case Item.Secondary:
+                    m_SecondaryWeapon.StopFire();
+                    break;
+                case Item.Throwing:
+                    m_ThrowWeapon.Throw();
+                    m_ThrowWeapon = null;
+                    --m_iAmmo_Throwable;
+                    if (m_iAmmo_Throwable > 0)
+                    {
+                        SpawnThrowItem();
+                    }
+                    else
+                    {
+                        m_eSelectedItem = Item.Primary;
+                        m_Item[(int)m_eSelectedItem].SetVisible(true, true);
+                    }
+                    break;
+                case Item.Healing:
+                    break;
+            }
+        }
+
+    }
+
+    public Weapon GetPrimaryWeapon()
+    {
+        return m_PrimaryWeapon;
+    }
+    public Weapon GetSecondaryWeapon()
+    {
+        return m_SecondaryWeapon;
+    }
+    public Item GetSelectedItem()
+    {
+        return m_eSelectedItem;
+    }
+
+    public void SetDamage(int _iMonAtt)
+    {
+        if (_TemporaryHP_Under <= _HP && _TemporaryHP_Upper <= 0)
+            _HP -= _iMonAtt;
+
+        else if (_TemporaryHP_Under >= _HP && _TemporaryHP_Upper >= 1)
+        {
+            _TemporaryHP_Upper -= _iMonAtt;
+        }
+
+        else if (_TemporaryHP_Under >= 100 && _TemporaryHP_Upper >= 1)
+        {
+            _TemporaryHP_Upper -= _iMonAtt;
+        }
+
+        else if (_TemporaryHP_Under >= _HP && _TemporaryHP_Upper <= 0)
+        {
+            _TemporaryHP_Under -= _iMonAtt;
+        }
+    }
+
+    void TemporaryHP_Logic()
+    {
+        if (_TemporaryHP_Under > 100)
+            _TemporaryHP_Under = 100;
+
+        if (_TemporaryHP_Upper > 100)
+            _TemporaryHP_Upper = 100;
+
+        if (_TemporaryHP_Under < 0)
+            _TemporaryHP_Under = 0;
+
+        if (_TemporaryHP_Upper < 0)
+            _TemporaryHP_Upper = 0;
+
+        if (_bUsePainPhill)
+        {
+            _AccTime += Time.deltaTime;
+
+            if (_iUsePainPhillCount == 1)
+            {
+                if (_HP >= 100) // 100 이상
+                {
+                    if (_TemporaryHP_Upper <= 0)
+                        _TemporaryHP_Upper = 30;
+
+                    else if (_TemporaryHP_Upper > 0)
+                        _TemporaryHP_Upper += 30;
+                }
+
+                else if (_HP < 100 && _HP > 70) // 71 ~ 99
+                {
+                    if (_TemporaryHP_Upper <= 0 && _TemporaryHP_Under <= _HP)
+                    {
+                        _TemporaryHP_Under += 100 - _HP;
+                        _TemporaryHP_Upper += _HP + 30 - 100;
+                    }
+
+                    else if (_TemporaryHP_Under > _HP && _TemporaryHP_Upper > 0)
+                    {
+                        _TemporaryHP_Under += 100 - _HP;
+
+                        if (_TemporaryHP_Under >= 100)
+                            _TemporaryHP_Upper += 30;
+                    }
+                }
+
+                else if (_HP < 71 && _HP > 0) // 1 ~ 70
+                {
+                    if (_TemporaryHP_Upper <= 0 && _TemporaryHP_Under >= _HP)
+                    {
+                        int i = 0;
+
+                        if (_TemporaryHP_Under < 100)
+                        {
+                            i = 100 - _TemporaryHP_Under;
+                            _TemporaryHP_Under += 30;
+                        }
+
+                        if (_TemporaryHP_Upper < 100 && _TemporaryHP_Under >= 100)
+                            _TemporaryHP_Upper += 30 - i;
+                    }
+
+                    else if (_TemporaryHP_Under >= _HP && _TemporaryHP_Upper > 0)
+                    {
+                        if (_TemporaryHP_Upper < 100 && _TemporaryHP_Under >= 100)
+                            _TemporaryHP_Upper += 30;
+                    }
+                }
+
+                _iUsePainPhillCount = 0;
+            }
+
+            // 체력이 100이고 (상)임시체력이 1 이상일 때.
+            if (_HP >= 100 &&
+                _TemporaryHP_Upper >= 1)
+            {
+                // 1초마다 (상)임시체력이 1씩 깎인다.
+                if (_AccTime >= 1.0f)
+                {
+                    _TemporaryHP_Upper -= 1;
+                    _AccTime = 0.0f;
+                }
+            }
+
+            // (상)임시체력이 0 이하일 때.
+            else if (_TemporaryHP_Upper <= 0 && _HP >= 100)
+            {
+                _AccTime = 0.0f;
+                _bUsePainPhill = false;
+            }
+
+            // (상)임시체력이 1 이상이고 (하)임시체력이 체력보다 크거나,
+            // (상)임시체력이 0 이하이고 (하)임시체력이 체력보다 클 때.
+            if ((_TemporaryHP_Upper >= 1 && _TemporaryHP_Under > _HP) ||
+                (_TemporaryHP_Upper <= 0 && _TemporaryHP_Under > _HP))
+            {
+                if (_AccTime >= 0.5f)
+                {
+                    if (_TemporaryHP_Upper >= 1 && _TemporaryHP_Under > _HP)
+                        _TemporaryHP_Upper -= 1;
+
+                    else if (_TemporaryHP_Upper <= 0 && _TemporaryHP_Under > _HP)
+                        _TemporaryHP_Under -= 1;
+
+                    _AccTime = 0.0f;
+                }
+            }
+
+            else if (_TemporaryHP_Upper <= 0 && _TemporaryHP_Under <= _HP)
+            {
+                _AccTime = 0.0f;
+                _bUsePainPhill = false;
+            }
+        }
+
+        else if (!_bUsePainPhill)
+        {
+            _TemporaryHP_Under = _HP;
+            _TemporaryHP_Upper = 0;
+        }
+
+        if (_TemporaryHP_Under > _HP)
+            _TemporaryHP_UnderON = true;
+        else
+            _TemporaryHP_UnderON = false;
+
+        if (_TemporaryHP_Upper > 0)
+            _TemporaryHP_UpperON = true;
+        else
+            _TemporaryHP_UpperON = false;
+    }
+
+    public void GiveDamage(float _fDamage)
+    {
+        SetDamage((int)_fDamage);
+    }
+    private void SpawnItems()
+    {
+        GameObject PrimaryWeapon = WeaponList.m_tWeapInfo[1]._Prefab;
+        GameObject SecondaryWeapon = WeaponList.m_tWeapInfo[3]._Prefab;
+        m_PrefabThrowWeapon = Resources.Load("Weapon Grenade") as GameObject;
+        m_RightArmTransform = transform.GetTransformInAllChildren("RightSocket");
+
+        m_Item[(int)Item.Primary] = Instantiate(PrimaryWeapon, m_RightArmTransform);
+        m_Item[(int)Item.Secondary] = Instantiate(SecondaryWeapon, m_RightArmTransform);
+        m_Item[(int)Item.Secondary].SetVisible(false, true);
+
+        m_PrimaryWeapon = m_Item[(int)Item.Primary].GetComponent<Weapon>();
+        m_SecondaryWeapon = m_Item[(int)Item.Secondary].GetComponent<Weapon>();
+    }
+    private void ChangeTo_BuyItem() // 상점에서 아이템 구매 할 때 교체기능
+    {
+        if (m_bChangePrimaryWeap)
+        {
+            m_Item[(int)Item.Primary].SetVisible(true, true);
+            m_PrimaryWeapon.GetComponent<BoxCollider>().enabled = true;
+            m_PrimaryWeapon.GetComponent<Rigidbody>().isKinematic = false;
+            m_PrimaryWeapon.m_bDropWeap = true;
+            m_Item[(int)Item.Primary].transform.parent = null;
+
+            GameObject PrimaryWeapon = WeaponList.m_tWeapInfo[m_iPrimaryWeaponNUM]._Prefab;
+
+            if (m_eSelectedItem == Item.Secondary)
+                PrimaryWeapon.SetVisible(false, true);
+            else
+                PrimaryWeapon.SetVisible(true, true);
+
+            m_Item[(int)Item.Primary] = Instantiate(PrimaryWeapon, m_RightArmTransform);
+            m_PrimaryWeapon = m_Item[(int)Item.Primary].GetComponent<Weapon>();
+
+            m_bChangePrimaryWeap = false;
+        }
+
+        if (m_bChangeSecondaryWeap)
+        {
+            m_Item[(int)Item.Secondary].SetVisible(true, true);
+            m_SecondaryWeapon.GetComponent<BoxCollider>().enabled = true;
+            m_SecondaryWeapon.GetComponent<Rigidbody>().isKinematic = false;
+            m_SecondaryWeapon.m_bDropWeap = true;
+            m_Item[(int)Item.Secondary].transform.parent = null;
+
+            GameObject SecondaryWeapon = WeaponList.m_tWeapInfo[m_iSecondaryWeaponNUM]._Prefab;
+
+            if (m_eSelectedItem == Item.Primary)
+                SecondaryWeapon.SetVisible(false, true);
+            else
+                SecondaryWeapon.SetVisible(true, true);
+
+            m_Item[(int)Item.Secondary] = Instantiate(SecondaryWeapon, m_RightArmTransform);
+            m_SecondaryWeapon = m_Item[(int)Item.Secondary].GetComponent<Weapon>();
+            
+            m_bChangeSecondaryWeap = false;
+        }
+
+        if (m_bChangeThrowable)
+        {
+            m_PrefabThrowWeapon = Resources.Load("Weapon Grenade") as GameObject;
+
+            m_bChangeThrowable = false;
+        }
+
+        if (m_bChangeMedicine)
+        {
+            m_bChangeMedicine = false;
+        }
+    }
+    private void ChangeTo_GetDropItem() // 드랍되어 있는 아이템을 주울 때 교체기능
+    {
+        switch (_CamRayTarget.GetComponent<Weapon>().Get_ItemType())
+        {
+            case Item.Primary:
+                m_Item[(int)Item.Primary].SetVisible(true, true);
+                m_PrimaryWeapon.GetComponent<BoxCollider>().enabled = true;
+                m_PrimaryWeapon.GetComponent<Rigidbody>().isKinematic = false;
+                m_PrimaryWeapon.m_bDropWeap = true;
+                m_Item[(int)Item.Primary].transform.parent = null;
+
+                m_PrimaryWeapon = _CamRayTarget.GetComponent<Weapon>();
+                _CamRayTarget.GetComponent<Weapon>().m_bDropWeap = false;
+                _CamRayTarget.GetComponent<BoxCollider>().enabled = false;
+                _CamRayTarget.GetComponent<Rigidbody>().isKinematic = true;
+                _CamRayTarget.transform.parent = m_RightArmTransform;
+                _CamRayTarget.transform.position = m_RightArmTransform.position;
+                if (m_eSelectedItem == Item.Secondary)
+                    _CamRayTarget.SetVisible(false, true);
+                else
+                    _CamRayTarget.SetVisible(true, true);
+                break;
+
+            case Item.Secondary:
+                m_Item[(int)Item.Secondary].SetVisible(true, true);
+                m_SecondaryWeapon.GetComponent<BoxCollider>().enabled = true;
+                m_SecondaryWeapon.GetComponent<Rigidbody>().isKinematic = false;
+                m_SecondaryWeapon.m_bDropWeap = true;
+                m_Item[(int)Item.Secondary].transform.parent = null;
+                
+                m_SecondaryWeapon = _CamRayTarget.GetComponent<Weapon>();
+                _CamRayTarget.GetComponent<Weapon>().m_bDropWeap = false;
+                _CamRayTarget.GetComponent<BoxCollider>().enabled = false;
+                _CamRayTarget.GetComponent<Rigidbody>().isKinematic = true;
+                _CamRayTarget.transform.parent = m_RightArmTransform;
+                _CamRayTarget.transform.position = m_RightArmTransform.position;
+                if (m_eSelectedItem == Item.Primary)
+                    _CamRayTarget.SetVisible(false, true);
+                else
+                    _CamRayTarget.SetVisible(true, true);
+                break;
+
+            case Item.Throwing:
+                break;
+            case Item.Healing:
+                break;
+            default:
+                break;
+        }
+        m_Item[(int)_CamRayTarget.GetComponent<Weapon>().Get_ItemType()] = _CamRayTarget;
+    }
+    private void SpawnThrowItem()
+    {
+        m_Item[(int)Item.Throwing] = Instantiate(m_PrefabThrowWeapon, m_RightArmTransform);
+        IThrowWeaponScript throwWeaponScript = m_Item[(int)Item.Throwing].GetComponent<IThrowWeaponScript>();
+        m_ThrowWeapon = throwWeaponScript.GetThrowWeapon();
+    }
+
+    private void Using_OBJ()
+    {
+        if (_fDis_PlayerAndOBJ < _fRangeToPlayer)
+        {
+            if (Input.GetKeyDown(KeyCode.E))
+            {
+                if (_CamRayTarget.layer == LayerMask.NameToLayer("StaticOBJ"))
+                {
+                    _HP += 50;
+                }
+
+                if (_CamRayTarget.layer == LayerMask.NameToLayer("ShopOBJ"))
+                {
+                    _mainMenuUI.OpenToShop();
+                }
+
+                if (_CamRayTarget.layer == LayerMask.NameToLayer("CanTakeOBJ"))
+                {
+                    m_iPocketMoney += 500;
+                }
+
+                if (_CamRayTarget.layer == LayerMask.NameToLayer("TakeWeapOBJ"))
+                {
+                    ChangeTo_GetDropItem();
+                }
+            }
+        }
+    }
+
+    private void PopUpToggle()
+    {
+        if (_fDis_PlayerAndOBJ < _fRangeToPlayer &&
+            _CamRayTarget.layer != LayerMask.NameToLayer("UI") &&
+            _CamRayTarget.layer != LayerMask.NameToLayer("Player") &&
+            _CamRayTarget.layer != LayerMask.NameToLayer("Terrain"))
+        {
+            if (_CamRayTarget.layer == LayerMask.NameToLayer("TakeWeapOBJ"))
+            {
+                _gameUIManager._InteractionUI_TEXT.text = _cameraRay._WeapName + "(으)로 교체하기";
+                _gameUIManager.m_InteractionUI.SetActive(true);
+            }
+
+            if (_CamRayTarget.layer == LayerMask.NameToLayer("StaticOBJ") &&
+                _CamRayTarget.layer != LayerMask.NameToLayer("TakeWeapOBJ"))
+            {
+                _gameUIManager._InteractionUI_TEXT.text = "상호작용";
+                _gameUIManager.m_InteractionUI.SetActive(true);
+            }
+
+            if (_CamRayTarget.layer == LayerMask.NameToLayer("ShopOBJ") &&
+                _CamRayTarget.layer != LayerMask.NameToLayer("TakeWeapOBJ"))
+            {
+                _gameUIManager._InteractionUI_TEXT.text = "상점열기";
+                _gameUIManager.m_InteractionUI.SetActive(true);
+            }
+
+            if (_CamRayTarget.layer == LayerMask.NameToLayer("StaticInteractOBJ") &&
+                _CamRayTarget.layer != LayerMask.NameToLayer("TakeWeapOBJ"))
+            {
+                _gameUIManager._InteractionUI_TEXT.text = "사용하기";
+                _gameUIManager.m_InteractionUI.SetActive(true);
+            }
+
+            if (_CamRayTarget.layer == LayerMask.NameToLayer("CanTakeOBJ") &&
+                _CamRayTarget.layer != LayerMask.NameToLayer("TakeWeapOBJ"))
+            {
+                _gameUIManager._InteractionUI_TEXT.text = "줍기";
+                _gameUIManager.m_InteractionUI.SetActive(true);
+            }
+
+
+        }
+
+        else
+            _gameUIManager.m_InteractionUI.SetActive(false);
+    }
+}
